@@ -113,39 +113,41 @@ const AudioEngine = {
 
   /* ---- Sons + voix au démarrage d'une phase ---- */
   announcePhase(phase) {
+    const text = this._phaseText(phase);
+
     if (phase.type === 'prepare') {
       this._beep(660, 0.18, 0.35);
-      this.speak(this._phaseText(phase), 100);
+      setTimeout(() => this.speak(text), 150);
 
     } else if (phase.type === 'work') {
-      // 3 bips montants énergiques
-      this._beep(523, 0.10, 0.4, 'square');
-      setTimeout(() => this._beep(659, 0.10, 0.45, 'square'), 110);
-      setTimeout(() => this._beep(880, 0.20, 0.55, 'square'), 220);
-      this.speak(this._phaseText(phase), 380);
+      // 3 bips montants énergiques (tous async pour ne pas bloquer)
+      setTimeout(() => this._beep(523, 0.10, 0.4, 'square'), 0);
+      setTimeout(() => this._beep(659, 0.10, 0.45, 'square'), 120);
+      setTimeout(() => this._beep(880, 0.20, 0.55, 'square'), 240);
+      setTimeout(() => this.speak(text), 400);
 
     } else if (phase.type === 'rest') {
       // 2 bips descendants doux
-      this._beep(660, 0.18, 0.35, 'sine');
-      setTimeout(() => this._beep(440, 0.25, 0.28, 'sine'), 200);
-      this.speak(this._phaseText(phase), 120);
+      setTimeout(() => this._beep(660, 0.18, 0.35, 'sine'), 0);
+      setTimeout(() => this._beep(440, 0.25, 0.28, 'sine'), 220);
+      setTimeout(() => this.speak(text), 200);
 
     } else if (phase.type === 'cooldown') {
-      this._beep(440, 0.3, 0.3, 'sine');
-      this.speak(this._phaseText(phase), 120);
+      setTimeout(() => this._beep(440, 0.3, 0.3, 'sine'), 0);
+      setTimeout(() => this.speak(text), 200);
 
     } else {
-      // Phase custom MIX
-      this._beep(600, 0.12, 0.35);
-      setTimeout(() => this._beep(800, 0.18, 0.45), 130);
-      this.speak(this._phaseText(phase), 300);
+      // Phase MIX custom sans type standard
+      setTimeout(() => this._beep(600, 0.12, 0.35), 0);
+      setTimeout(() => this._beep(800, 0.18, 0.45), 140);
+      setTimeout(() => this.speak(text), 320);
     }
   },
 
-  /* ---- Décompte 3-2-1 ---- */
+  /* ---- Décompte 3-2-1 (géré directement dans TimerEngine._tick) ---- */
   countdown(n) {
     this._beep(n === 1 ? 1200 : 900, 0.12, 0.35, 'sine');
-    if (n <= 3) this.speak(String(n));
+    setTimeout(() => this.speak(String(n)), 0);
   },
 
   /* ---- Fin de phase (transition) ---- */
@@ -296,77 +298,94 @@ class TimerEngine {
     this.cb = callbacks;
     this.idx = 0;
     this.state = 'idle';
-    this._raf = null;
+    this._timer = null;      // setTimeout handle (plus fiable que rAF sur iOS avec speech)
     this._phaseStart = null;
     this._pauseElapsed = 0;
+    this._lastRemainSec = -1; // pour détecter les changements de seconde
   }
 
   get currentPhase() { return this.phases[this.idx]; }
-  get nextPhase() { return this.phases[this.idx + 1] || null; }
+  get nextPhase()    { return this.phases[this.idx + 1] || null; }
 
   start() {
     this.state = 'running';
     this._phaseStart = performance.now();
     this._pauseElapsed = 0;
+    this._lastRemainSec = -1;
     AudioEngine._init();
-    this._tick();
     this.cb.onPhaseStart && this.cb.onPhaseStart(this.currentPhase, this.nextPhase);
+    this._scheduleTick();
   }
 
   pause() {
     if (this.state !== 'running') return;
     this.state = 'paused';
     this._pauseElapsed += performance.now() - this._phaseStart;
-    cancelAnimationFrame(this._raf);
+    clearTimeout(this._timer);
   }
 
   resume() {
     if (this.state !== 'paused') return;
     this.state = 'running';
     this._phaseStart = performance.now();
-    this._tick();
+    this._scheduleTick();
   }
 
   stop() {
     this.state = 'stopped';
-    cancelAnimationFrame(this._raf);
+    clearTimeout(this._timer);
+  }
+
+  // Planifie le prochain tick (toutes les 100ms — indépendant de rAF et du speech)
+  _scheduleTick() {
+    this._timer = setTimeout(() => this._tick(), 100);
   }
 
   _tick() {
     if (this.state !== 'running') return;
-    const elapsed = (performance.now() - this._phaseStart) + this._pauseElapsed;
-    const remaining = Math.max(0, this.currentPhase.duration * 1000 - elapsed);
-    const remainSec = Math.ceil(remaining / 1000);
-    const progress = 1 - remaining / (this.currentPhase.duration * 1000);
 
+    const elapsed    = (performance.now() - this._phaseStart) + this._pauseElapsed;
+    const duration   = this.currentPhase.duration * 1000;
+    const remaining  = Math.max(0, duration - elapsed);
+    const remainSec  = Math.ceil(remaining / 1000);
+    const progress   = 1 - remaining / duration;
+
+    // Mise à jour de l'affichage
     this.cb.onTick && this.cb.onTick(remainSec, progress);
 
-    // Décompte 3-2-1 : bip + voix
-    const prevRemainSec = Math.ceil((remaining + 50) / 1000);
-    if (remainSec !== prevRemainSec && remainSec <= 3 && remainSec > 0) {
-      AudioEngine.countdown(remainSec);
+    // Décompte 3-2-1 : déclenché exactement une fois par seconde
+    if (remainSec !== this._lastRemainSec) {
+      this._lastRemainSec = remainSec;
+      if (remainSec <= 3 && remainSec > 0) {
+        // Bip immédiat, voix en async pour ne pas bloquer le timer
+        AudioEngine._beep(remainSec === 1 ? 1200 : 900, 0.12, 0.35, 'sine');
+        setTimeout(() => AudioEngine.speak(String(remainSec)), 0);
+      }
     }
 
     if (remaining <= 0) {
       this._nextPhase();
-      return;
+    } else {
+      this._scheduleTick();
     }
-    this._raf = requestAnimationFrame(() => this._tick());
   }
 
   _nextPhase() {
+    clearTimeout(this._timer);
     AudioEngine.phaseEnd();
     this.idx++;
     if (this.idx >= this.phases.length) {
       this.state = 'finished';
-      AudioEngine.workoutEnd();
+      setTimeout(() => AudioEngine.workoutEnd(), 200);
       this.cb.onFinish && this.cb.onFinish();
       return;
     }
     this._phaseStart = performance.now();
     this._pauseElapsed = 0;
+    this._lastRemainSec = -1;
     this.cb.onPhaseStart && this.cb.onPhaseStart(this.currentPhase, this.nextPhase);
-    this._tick();
+    // Léger délai avant de reprendre le tick (laisse le temps aux sons de démarrer)
+    this._timer = setTimeout(() => this._scheduleTick(), 50);
   }
 }
 
