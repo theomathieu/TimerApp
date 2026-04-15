@@ -1,5 +1,5 @@
 /* TimerApp Service Worker */
-const CACHE = 'timerapp-v7';
+const CACHE = 'timerapp-v8';
 const ASSETS = [
   './',
   './index.html',

@@ -290,102 +290,101 @@ function totalSeconds(phases) {
 }
 
 /* ============================================================
-   TIMER ENGINE
+   TIMER ENGINE  — setInterval fixe, Date.now() absolu
    ============================================================ */
 class TimerEngine {
   constructor(phases, callbacks) {
-    this.phases = phases;
-    this.cb = callbacks;
-    this.idx = 0;
-    this.state = 'idle';
-    this._timer = null;      // setTimeout handle (plus fiable que rAF sur iOS avec speech)
-    this._phaseStart = null;
-    this._pauseElapsed = 0;
-    this._lastRemainSec = -1; // pour détecter les changements de seconde
+    this.phases   = phases;
+    this.cb       = callbacks;
+    this.idx      = 0;
+    this.state    = 'idle';
+    this._iv      = null;   // handle setInterval
+    this._t0      = 0;      // Date.now() au démarrage de la phase courante
+    this._saved   = 0;      // ms accumulées avant pause
+    this._lastSec = -1;     // dernière seconde affichée (pour décompte)
   }
 
   get currentPhase() { return this.phases[this.idx]; }
   get nextPhase()    { return this.phases[this.idx + 1] || null; }
 
+  /* Temps écoulé dans la phase courante */
+  _elapsed() { return this._saved + (Date.now() - this._t0); }
+
   start() {
-    this.state = 'running';
-    this._phaseStart = performance.now();
-    this._pauseElapsed = 0;
-    this._lastRemainSec = -1;
     AudioEngine._init();
+    this._t0    = Date.now();
+    this._saved = 0;
+    this._lastSec = -1;
+    this.state  = 'running';
     this.cb.onPhaseStart && this.cb.onPhaseStart(this.currentPhase, this.nextPhase);
-    this._scheduleTick();
+    this._startInterval();
   }
 
   pause() {
     if (this.state !== 'running') return;
-    this.state = 'paused';
-    this._pauseElapsed += performance.now() - this._phaseStart;
-    clearTimeout(this._timer);
+    this.state  = 'paused';
+    this._saved = this._elapsed();
+    clearInterval(this._iv);
   }
 
   resume() {
     if (this.state !== 'paused') return;
     this.state = 'running';
-    this._phaseStart = performance.now();
-    this._scheduleTick();
+    this._t0   = Date.now();
+    this._startInterval();
   }
 
   stop() {
     this.state = 'stopped';
-    clearTimeout(this._timer);
+    clearInterval(this._iv);
   }
 
-  // Planifie le prochain tick (toutes les 100ms — indépendant de rAF et du speech)
-  _scheduleTick() {
-    this._timer = setTimeout(() => this._tick(), 100);
+  _startInterval() {
+    clearInterval(this._iv);
+    this._iv = setInterval(() => this._tick(), 250); // 4 fois/sec — fiable iOS
   }
 
   _tick() {
     if (this.state !== 'running') return;
 
-    const elapsed    = (performance.now() - this._phaseStart) + this._pauseElapsed;
-    const duration   = this.currentPhase.duration * 1000;
-    const remaining  = Math.max(0, duration - elapsed);
-    const remainSec  = Math.ceil(remaining / 1000);
-    const progress   = 1 - remaining / duration;
+    const elapsed   = this._elapsed();
+    const durMs     = this.currentPhase.duration * 1000;
+    const remaining = Math.max(0, durMs - elapsed);
+    const remSec    = Math.ceil(remaining / 1000);
+    const progress  = remaining > 0 ? 1 - remaining / durMs : 1;
 
-    // Mise à jour de l'affichage
-    this.cb.onTick && this.cb.onTick(remainSec, progress);
+    this.cb.onTick && this.cb.onTick(remSec, progress);
 
-    // Décompte 3-2-1 : déclenché exactement une fois par seconde
-    if (remainSec !== this._lastRemainSec) {
-      this._lastRemainSec = remainSec;
-      if (remainSec <= 3 && remainSec > 0) {
-        // Bip immédiat, voix en async pour ne pas bloquer le timer
-        AudioEngine._beep(remainSec === 1 ? 1200 : 900, 0.12, 0.35, 'sine');
-        setTimeout(() => AudioEngine.speak(String(remainSec)), 0);
-      }
+    // Décompte 3-2-1 : une seule fois par seconde
+    if (remSec !== this._lastSec && remSec > 0 && remSec <= 3) {
+      this._lastSec = remSec;
+      AudioEngine._beep(remSec === 1 ? 1200 : 900, 0.12, 0.35, 'sine');
+      setTimeout(() => AudioEngine.speak(String(remSec)), 0);
     }
 
     if (remaining <= 0) {
-      this._nextPhase();
-    } else {
-      this._scheduleTick();
+      clearInterval(this._iv);
+      this._advance();
     }
   }
 
-  _nextPhase() {
-    clearTimeout(this._timer);
+  _advance() {
     AudioEngine.phaseEnd();
     this.idx++;
+
     if (this.idx >= this.phases.length) {
       this.state = 'finished';
-      setTimeout(() => AudioEngine.workoutEnd(), 200);
+      setTimeout(() => AudioEngine.workoutEnd(), 300);
       this.cb.onFinish && this.cb.onFinish();
       return;
     }
-    this._phaseStart = performance.now();
-    this._pauseElapsed = 0;
-    this._lastRemainSec = -1;
+
+    // Nouvelle phase : réinitialiser le chrono et relancer immédiatement
+    this._t0      = Date.now();
+    this._saved   = 0;
+    this._lastSec = -1;
     this.cb.onPhaseStart && this.cb.onPhaseStart(this.currentPhase, this.nextPhase);
-    // Léger délai avant de reprendre le tick (laisse le temps aux sons de démarrer)
-    this._timer = setTimeout(() => this._scheduleTick(), 50);
+    this._startInterval();
   }
 }
 
