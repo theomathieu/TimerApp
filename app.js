@@ -58,16 +58,110 @@ const DB = {
    ============================================================ */
 const AudioEngine = {
   ctx: null,
+  _frVoice: null,
+  _voicesReady: false,
 
   _init() {
     if (!this.ctx) {
       try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+
+    // Charger les voix TTS (asynchrone sur certains navigateurs)
+    if (window.speechSynthesis && !this._voicesReady) {
+      this._loadVoices();
+      window.speechSynthesis.addEventListener('voiceschanged', () => this._loadVoices());
     }
   },
 
+  _loadVoices() {
+    const voices = window.speechSynthesis.getVoices();
+    this._frVoice = voices.find(v => v.lang === 'fr-FR')
+                 || voices.find(v => v.lang.startsWith('fr'))
+                 || null;
+    this._voicesReady = true;
+  },
+
+  /* ---- Synthèse vocale ---- */
+  speak(text, delay = 0) {
+    if (!window.speechSynthesis) return;
+    const say = () => {
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = 'fr-FR';
+      utt.rate = 1.05;
+      utt.pitch = 1.0;
+      utt.volume = 1.0;
+      if (this._frVoice) utt.voice = this._frVoice;
+      window.speechSynthesis.speak(utt);
+    };
+    delay > 0 ? setTimeout(say, delay) : say();
+  },
+
+  /* ---- Texte d'annonce par type de phase ---- */
+  _phaseText(phase) {
+    // Si le bloc a un label custom (MIX), on l'annonce
+    if (phase.label && phase.label.trim()) return phase.label;
+    const map = {
+      prepare:  'Préparez-vous',
+      work:     'Travail',
+      rest:     'Repos',
+      cooldown: 'Récupération',
+    };
+    return map[phase.type] || phase.name;
+  },
+
+  /* ---- Sons + voix au démarrage d'une phase ---- */
+  announcePhase(phase) {
+    if (phase.type === 'prepare') {
+      this._beep(660, 0.18, 0.35);
+      this.speak(this._phaseText(phase), 100);
+
+    } else if (phase.type === 'work') {
+      // 3 bips montants énergiques
+      this._beep(523, 0.10, 0.4, 'square');
+      setTimeout(() => this._beep(659, 0.10, 0.45, 'square'), 110);
+      setTimeout(() => this._beep(880, 0.20, 0.55, 'square'), 220);
+      this.speak(this._phaseText(phase), 380);
+
+    } else if (phase.type === 'rest') {
+      // 2 bips descendants doux
+      this._beep(660, 0.18, 0.35, 'sine');
+      setTimeout(() => this._beep(440, 0.25, 0.28, 'sine'), 200);
+      this.speak(this._phaseText(phase), 120);
+
+    } else if (phase.type === 'cooldown') {
+      this._beep(440, 0.3, 0.3, 'sine');
+      this.speak(this._phaseText(phase), 120);
+
+    } else {
+      // Phase custom MIX
+      this._beep(600, 0.12, 0.35);
+      setTimeout(() => this._beep(800, 0.18, 0.45), 130);
+      this.speak(this._phaseText(phase), 300);
+    }
+  },
+
+  /* ---- Décompte 3-2-1 ---- */
+  countdown(n) {
+    this._beep(n === 1 ? 1200 : 900, 0.12, 0.35, 'sine');
+    if (n <= 3) this.speak(String(n));
+  },
+
+  /* ---- Fin de phase (transition) ---- */
+  phaseEnd() {
+    this._beep(880, 0.08, 0.3);
+    setTimeout(() => this._beep(1100, 0.15, 0.4), 100);
+  },
+
+  /* ---- Fin de séance ---- */
+  workoutEnd() {
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((f, i) => setTimeout(() => this._beep(f, 0.22, 0.45, 'sine'), i * 160));
+    this.speak('Séance terminée, bravo !', 700);
+  },
+
+  /* ---- Bip générique ---- */
   _beep(freq, dur, vol = 0.4, type = 'sine') {
     if (!this.ctx) return;
     try {
@@ -82,19 +176,7 @@ const AudioEngine = {
       osc.start(this.ctx.currentTime);
       osc.stop(this.ctx.currentTime + dur);
     } catch {}
-  },
-
-  countdown() { this._beep(880, 0.15, 0.3); },
-  phaseEnd() {
-    this._beep(660, 0.1, 0.4);
-    setTimeout(() => this._beep(880, 0.2, 0.5), 120);
-  },
-  workoutEnd() {
-    this._beep(523, 0.15, 0.4);
-    setTimeout(() => this._beep(659, 0.15, 0.4), 180);
-    setTimeout(() => this._beep(784, 0.35, 0.5), 360);
-  },
-  tick() { this._beep(1100, 0.05, 0.15); }
+  }
 };
 
 /* ============================================================
@@ -259,10 +341,10 @@ class TimerEngine {
 
     this.cb.onTick && this.cb.onTick(remainSec, progress);
 
-    // Countdown beeps (3, 2, 1)
+    // Décompte 3-2-1 : bip + voix
     const prevRemainSec = Math.ceil((remaining + 50) / 1000);
     if (remainSec !== prevRemainSec && remainSec <= 3 && remainSec > 0) {
-      AudioEngine.countdown();
+      AudioEngine.countdown(remainSec);
     }
 
     if (remaining <= 0) {
@@ -333,6 +415,9 @@ const TimerDisplay = {
     const overlay = document.getElementById('timer-overlay');
     const tints = { yellow: '#1a1600', green: '#001a0a', red: '#1a0000', blue: '#001220', purple: '#100820' };
     overlay.style.background = tints[phase.color] || '#0a0a0a';
+
+    // Sons + voix selon la phase
+    AudioEngine.announcePhase(phase);
   },
 
   _onTick(rem, prog) {
