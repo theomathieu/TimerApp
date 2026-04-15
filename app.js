@@ -408,56 +408,80 @@ function openTimePicker(tabType, fieldName) {
   }, 50);
 }
 
+/* ---- Picker : stockage explicite des valeurs sélectionnées ---- */
+const _pickerValues = new Map(); // scrollId -> valeur numérique courante
+
 function buildPickerScroll(scrollId, min, max, selected, type) {
   const items = [];
-  for (let i = min; i <= max; i++) items.push(i);
-  const container = document.getElementById(scrollId);
-  const col = container.parentElement;
-
-  // Reset scroll position and remove old listeners (replace with onscroll)
-  col.scrollTop = 0;
-  container.innerHTML = '';
-  // Padding items
-  container.appendChild(pickerPad());
-  container.appendChild(pickerPad());
-  items.forEach(val => {
-    const div = document.createElement('div');
-    div.className = 'picker-item' + (val === selected ? ' selected' : '');
-    div.textContent = String(val).padStart(2, '0');
-    div.dataset.value = val;
-    div.dataset.type = type;
-    container.appendChild(div);
-  });
-  container.appendChild(pickerPad());
-  container.appendChild(pickerPad());
-
-  // Use onscroll (not addEventListener) to avoid stacking listeners
-  col.onscroll = () => updatePickerSelection(col);
+  for (let i = min; i <= max; i++) {
+    items.push({ label: String(i).padStart(2, '0'), value: i });
+  }
+  _buildPicker(scrollId, items, selected);
 }
 
 function buildPickerScrollItems(scrollId, labels, selected, type) {
+  const items = labels.map(l => ({ label: l, value: parseInt(l) }));
+  _buildPicker(scrollId, items, selected);
+}
+
+function _buildPicker(scrollId, items, selected) {
+  // Stocker la valeur initiale
+  _pickerValues.set(scrollId, selected);
+
   const container = document.getElementById(scrollId);
   const col = container.parentElement;
 
-  // Reset scroll and remove old listeners
-  col.scrollTop = 0;
+  // Détacher l'ancien handler AVANT de toucher scrollTop
+  col.onscroll = null;
   container.innerHTML = '';
+
   container.appendChild(pickerPad());
   container.appendChild(pickerPad());
-  labels.forEach(label => {
-    const val = parseInt(label);
+  items.forEach(({ label, value }) => {
     const div = document.createElement('div');
-    div.className = 'picker-item' + (val === selected ? ' selected' : '');
+    div.className = 'picker-item' + (value === selected ? ' selected' : '');
     div.textContent = label;
-    div.dataset.value = val;
-    div.dataset.type = type;
+    div.dataset.value = value;
+    // Clic direct sur un item
+    div.addEventListener('click', () => {
+      _pickerValues.set(scrollId, value);
+      container.querySelectorAll('.picker-item').forEach(i => i.classList.remove('selected'));
+      div.classList.add('selected');
+    });
     container.appendChild(div);
   });
   container.appendChild(pickerPad());
   container.appendChild(pickerPad());
 
-  // Use onscroll to avoid stacking listeners
-  col.onscroll = () => updatePickerSelection(col);
+  // Scroll initial sans déclencher le handler
+  col.scrollTop = 0;
+
+  // Handler de scroll : met à jour la valeur stockée
+  col.onscroll = () => {
+    const updated = _computePickerValue(scrollId);
+    if (updated !== null) {
+      _pickerValues.set(scrollId, updated);
+      // Mise à jour visuelle
+      container.querySelectorAll('.picker-item[data-value]').forEach(item => {
+        item.classList.toggle('selected', parseInt(item.dataset.value) === updated);
+      });
+    }
+  };
+}
+
+function _computePickerValue(scrollId) {
+  const container = document.getElementById(scrollId);
+  const col = container.parentElement;
+  const itemH = 44;
+  const colMid = col.scrollTop + col.clientHeight / 2;
+  const items = [...container.querySelectorAll('.picker-item[data-value]')];
+  if (!items.length) return null;
+  let closest = items[0], minDist = Infinity;
+  items.forEach(item => {
+    const dist = Math.abs((item.offsetTop + itemH / 2) - colMid);
+    if (dist < minDist) { minDist = dist; closest = item; }
+  });
+  return parseInt(closest.dataset.value);
 }
 
 function pickerPad() {
@@ -468,15 +492,7 @@ function pickerPad() {
 }
 
 function updatePickerSelection(col) {
-  const items = col.querySelectorAll('.picker-item:not([style*="hidden"])');
-  const colCenter = col.scrollTop + col.clientHeight / 2;
-  let closest = null, minDist = Infinity;
-  items.forEach(item => {
-    const dist = Math.abs((item.offsetTop + 22) - colCenter);
-    if (dist < minDist) { minDist = dist; closest = item; }
-  });
-  items.forEach(i => i.classList.remove('selected'));
-  if (closest) closest.classList.add('selected');
+  // Conservé pour compatibilité — non utilisé dans le nouveau système
 }
 
 function scrollPickerToSelected(scrollId) {
@@ -484,17 +500,17 @@ function scrollPickerToSelected(scrollId) {
   const col = container.parentElement;
   const selected = container.querySelector('.selected');
   if (selected) {
-    // Use instant scroll (not smooth) so selection is stable immediately
+    // Scroll sans déclencher le handler (on le retire temporairement)
+    const handler = col.onscroll;
+    col.onscroll = null;
     col.scrollTop = selected.offsetTop - col.clientHeight / 2 + 22;
-    // Force update selection after scroll settles
-    requestAnimationFrame(() => updatePickerSelection(col));
+    requestAnimationFrame(() => { col.onscroll = handler; });
   }
 }
 
 function getPickerValue(scrollId) {
-  const container = document.getElementById(scrollId);
-  const selected = container.querySelector('.selected');
-  return selected ? parseInt(selected.dataset.value) : 0;
+  // Lire depuis la Map — fiable indépendamment du DOM
+  return _pickerValues.get(scrollId) ?? 0;
 }
 
 function confirmTimePicker() {
