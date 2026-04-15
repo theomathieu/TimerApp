@@ -66,8 +66,6 @@ const AudioEngine = {
       try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
     }
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
-
-    // Charger les voix TTS (asynchrone sur certains navigateurs)
     if (window.speechSynthesis && !this._voicesReady) {
       this._loadVoices();
       window.speechSynthesis.addEventListener('voiceschanged', () => this._loadVoices());
@@ -82,87 +80,146 @@ const AudioEngine = {
     this._voicesReady = true;
   },
 
-  /* ---- Synthèse vocale ---- */
-  speak(text, delay = 0) {
+  /* ----------------------------------------------------------------
+     SYNTHÈSE VOCALE
+  ---------------------------------------------------------------- */
+  speak(text) {
     if (!window.speechSynthesis) return;
-    const say = () => {
-      window.speechSynthesis.cancel();
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.lang = 'fr-FR';
-      utt.rate = 1.05;
-      utt.pitch = 1.0;
-      utt.volume = 1.0;
-      if (this._frVoice) utt.voice = this._frVoice;
-      window.speechSynthesis.speak(utt);
-    };
-    delay > 0 ? setTimeout(say, delay) : say();
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang = 'fr-FR';
+    utt.rate = 1.0;
+    utt.pitch = 1.0;
+    utt.volume = 1.0;
+    if (this._frVoice) utt.voice = this._frVoice;
+    window.speechSynthesis.speak(utt);
   },
 
-  /* ---- Texte d'annonce par type de phase ---- */
   _phaseText(phase) {
-    // Si le bloc a un label custom (MIX), on l'annonce
     if (phase.label && phase.label.trim()) return phase.label;
-    const map = {
-      prepare:  'Préparez-vous',
-      work:     'Travail',
-      rest:     'Repos',
-      cooldown: 'Récupération',
-    };
-    return map[phase.type] || phase.name;
+    return { prepare: 'Préparez-vous', work: 'Travail', rest: 'Repos', cooldown: 'Récupération' }[phase.type] || phase.name;
   },
 
-  /* ---- Sons + voix au démarrage d'une phase (tout async) ---- */
+  /* ----------------------------------------------------------------
+     GONG  —  son de cloche/gong à l'attaque rapide, longue résonance
+  ---------------------------------------------------------------- */
+  gong() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    // 4 harmoniques qui donnent la couleur "métal"
+    [
+      { f: 110,  v: 0.70, d: 3.0 },
+      { f: 185,  v: 0.40, d: 2.2 },
+      { f: 308,  v: 0.22, d: 1.5 },
+      { f: 512,  v: 0.12, d: 0.9 },
+    ].forEach(({ f, v, d }) => {
+      try {
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(v, t + 0.006);  // attaque ultra-rapide
+        g.gain.exponentialRampToValueAtTime(0.001, t + d);
+        o.connect(g); g.connect(this.ctx.destination);
+        o.start(t); o.stop(t + d + 0.05);
+      } catch {}
+    });
+  },
+
+  /* ----------------------------------------------------------------
+     TICK-TOCK  —  son d'horloge (tick grave, tock aigu)
+  ---------------------------------------------------------------- */
+  tickTock(isTick) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    try {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = isTick ? 1100 : 880;
+      const dur = 0.04;
+      g.gain.setValueAtTime(0.22, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(g); g.connect(this.ctx.destination);
+      o.start(t); o.stop(t + dur + 0.01);
+    } catch {}
+  },
+
+  /* ----------------------------------------------------------------
+     ANNONCE DE PHASE  —  gong + voix (tout asynchrone)
+  ---------------------------------------------------------------- */
   announcePhase(phase) {
     const text = this._phaseText(phase);
-    // Micro-délai initial pour garantir que le timer a déjà démarré
     setTimeout(() => {
-      if (phase.type === 'prepare') {
-        this._beep(660, 0.18, 0.35);
-        setTimeout(() => this.speak(text), 200);
-
-      } else if (phase.type === 'work') {
-        this._beep(523, 0.10, 0.4, 'square');
-        setTimeout(() => this._beep(659, 0.10, 0.45, 'square'), 120);
-        setTimeout(() => this._beep(880, 0.20, 0.55, 'square'), 240);
-        setTimeout(() => this.speak(text), 400);
-
-      } else if (phase.type === 'rest') {
-        this._beep(660, 0.18, 0.35, 'sine');
-        setTimeout(() => this._beep(440, 0.25, 0.28, 'sine'), 200);
-        setTimeout(() => this.speak(text), 200);
-
-      } else if (phase.type === 'cooldown') {
-        this._beep(440, 0.3, 0.3, 'sine');
-        setTimeout(() => this.speak(text), 200);
-
-      } else {
-        this._beep(600, 0.12, 0.35);
-        setTimeout(() => this._beep(800, 0.18, 0.45), 140);
-        setTimeout(() => this.speak(text), 320);
-      }
-    }, 50);
+      // 1. Gong toujours en premier
+      this.gong();
+      // 2. Voix après le gong (timing selon type)
+      const voiceDelay = (phase.type === 'work') ? 700 : 500;
+      setTimeout(() => this.speak(text), voiceDelay);
+    }, 60);
   },
 
-  /* ---- Décompte 3-2-1 (géré directement dans TimerEngine._tick) ---- */
-  countdown(n) {
-    this._beep(n === 1 ? 1200 : 900, 0.12, 0.35, 'sine');
-    setTimeout(() => this.speak(String(n)), 0);
+  /* ----------------------------------------------------------------
+     DÉCOMPTE  3 – 2 – 1
+  ---------------------------------------------------------------- */
+  countdownBeep(n) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    // Bip court et perçant, plus aigu pour "1"
+    const freq = n === 1 ? 1500 : 1100;
+    try {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.55, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      o.connect(g); g.connect(this.ctx.destination);
+      o.start(t); o.stop(t + 0.20);
+    } catch {}
+    // Voix du chiffre juste après
+    setTimeout(() => this.speak(String(n)), 80);
   },
 
-  /* ---- Fin de phase (transition) ---- */
+  /* ----------------------------------------------------------------
+     FIN DE PHASE  (transition entre blocs)
+  ---------------------------------------------------------------- */
   phaseEnd() {
-    this._beep(880, 0.08, 0.3);
-    setTimeout(() => this._beep(1100, 0.15, 0.4), 100);
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    // Double bip descendant bref
+    [{ f: 1000, delay: 0 }, { f: 750, delay: 0.13 }].forEach(({ f, delay }) => {
+      try {
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0.35, t + delay);
+        g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.12);
+        o.connect(g); g.connect(this.ctx.destination);
+        o.start(t + delay); o.stop(t + delay + 0.15);
+      } catch {}
+    });
   },
 
-  /* ---- Fin de séance ---- */
+  /* ----------------------------------------------------------------
+     FIN DE SÉANCE
+  ---------------------------------------------------------------- */
   workoutEnd() {
-    const notes = [523, 659, 784, 1047];
-    notes.forEach((f, i) => setTimeout(() => this._beep(f, 0.22, 0.45, 'sine'), i * 160));
-    this.speak('Séance terminée, bravo !', 700);
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    // Fanfare montante + gong final
+    [523, 659, 784, 1047].forEach((f, i) => {
+      setTimeout(() => this._beep(f, 0.25, 0.45, 'sine'), i * 170);
+    });
+    setTimeout(() => this.gong(), 700);
+    setTimeout(() => this.speak('Séance terminée, bravo !'), 1200);
   },
 
-  /* ---- Bip générique ---- */
+  /* ----------------------------------------------------------------
+     BIP GÉNÉRIQUE INTERNE
+  ---------------------------------------------------------------- */
   _beep(freq, dur, vol = 0.4, type = 'sine') {
     if (!this.ctx) return;
     try {
@@ -298,9 +355,12 @@ class TimerEngine {
     this.idx      = 0;
     this.state    = 'idle';
     this._iv      = null;
-    this._t0      = 0;      // Date.now() référence de la phase courante
-    this._offset  = 0;      // ms écoulées avant la référence (pause)
+    this._t0      = 0;
+    this._offset  = 0;
     this._prevSec = -1;
+    // Tick-tock (dernières 10 secondes de chaque phase)
+    this._ttIv    = null;
+    this._ttBeat  = false; // alterne tick/tock
   }
 
   get currentPhase() { return this.phases[this.idx]; }
@@ -343,10 +403,27 @@ class TimerEngine {
   stop() {
     this.state = 'stopped';
     clearInterval(this._iv);
+    this._stopTickTock();
+  }
+
+  /* ---- Tick-tock : démarre/arrête l'horloge de fond ---- */
+  _startTickTock() {
+    if (this._ttIv) return;
+    this._ttBeat = false;
+    this._ttIv = setInterval(() => {
+      if (this.state === 'running') {
+        AudioEngine.tickTock(this._ttBeat);
+        this._ttBeat = !this._ttBeat;
+      }
+    }, 500);
+  }
+
+  _stopTickTock() {
+    if (this._ttIv) { clearInterval(this._ttIv); this._ttIv = null; }
   }
 
   _tick() {
-    if (this.state !== 'running') return; // pause ou stop : ne rien faire
+    if (this.state !== 'running') return;
 
     const phase     = this.currentPhase;
     const elapsed   = this._elapsed();
@@ -357,23 +434,27 @@ class TimerEngine {
 
     this.cb.onTick && this.cb.onTick(remSec, progress);
 
-    // Décompte 3-2-1 (une fois par seconde, complètement async)
+    // Décompte 3-2-1 — bip + voix, une fois par seconde
     if (remSec > 0 && remSec <= 3 && remSec !== this._prevSec) {
       this._prevSec = remSec;
       const n = remSec;
-      setTimeout(() => {
-        AudioEngine._beep(n === 1 ? 1200 : 900, 0.12, 0.35, 'sine');
-        setTimeout(() => AudioEngine.speak(String(n)), 60);
-      }, 0);
+      setTimeout(() => AudioEngine.countdownBeep(n), 0);
+    }
+
+    // Tick-tock : dernières 10 secondes uniquement
+    if (remSec > 0 && remSec <= 10) {
+      this._startTickTock();
+    } else {
+      this._stopTickTock();
     }
 
     if (remaining <= 0) {
+      this._stopTickTock();
       this._advance();
     }
   }
 
   _advance() {
-    // Passer à la phase suivante — l'interval continue de tourner
     setTimeout(() => AudioEngine.phaseEnd(), 0);
     this.idx++;
 
