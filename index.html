@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="TimerApp" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>TimerApp</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ======= MAIN TABS CONTENT ======= -->
+  <main id="main-content">
+
+    <!-- TABATA TAB -->
+    <div id="tab-tabata" class="tab-content active">
+      <div class="tab-header">
+        <span class="tab-title">TABATA</span>
+        <div class="tab-actions">
+          <button class="btn-icon" onclick="TabataTab.openPresets()" title="Presets">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button class="btn-save" onclick="TabataTab.savePreset()">SAUV.</button>
+        </div>
+      </div>
+      <div class="config-list" id="tabata-config">
+        <div class="config-row" onclick="openTimePicker('tabata','prepare')">
+          <div class="config-dot yellow"></div>
+          <div class="config-info">
+            <span class="config-label">PRÉPARATION</span>
+            <span class="config-sub">Compte à rebours avant le départ</span>
+          </div>
+          <span class="config-value" id="tabata-prepare-val">:05</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openTimePicker('tabata','work')">
+          <div class="config-dot green"></div>
+          <div class="config-info">
+            <span class="config-label">TRAVAIL</span>
+            <span class="config-sub">Durée de l'effort</span>
+          </div>
+          <span class="config-value" id="tabata-work-val">:20</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openTimePicker('tabata','rest')">
+          <div class="config-dot red"></div>
+          <div class="config-info">
+            <span class="config-label">REPOS</span>
+            <span class="config-sub">Récupération</span>
+          </div>
+          <span class="config-value" id="tabata-rest-val">:10</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openNumberPicker('tabata','rounds')">
+          <div class="config-dot blue"></div>
+          <div class="config-info">
+            <span class="config-label">ROUNDS</span>
+            <span class="config-sub">1 round = travail + repos</span>
+          </div>
+          <span class="config-value" id="tabata-rounds-val">8</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openNumberPicker('tabata','cycles')">
+          <div class="config-dot yellow"></div>
+          <div class="config-info">
+            <span class="config-label">CYCLES</span>
+            <span class="config-sub">1 cycle = N rounds</span>
+          </div>
+          <span class="config-value" id="tabata-cycles-val">1</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openTimePicker('tabata','restbc')">
+          <div class="config-dot yellow"></div>
+          <div class="config-info">
+            <span class="config-label">REPOS ENTRE CYCLES</span>
+            <span class="config-sub">Récupération inter-cycles</span>
+          </div>
+          <span class="config-value" id="tabata-restbc-val">:00</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openTimePicker('tabata','cooldown')">
+          <div class="config-dot blue"></div>
+          <div class="config-info">
+            <span class="config-label">RÉCUPÉRATION</span>
+            <span class="config-sub">Après le workout</span>
+          </div>
+          <span class="config-value" id="tabata-cooldown-val">:00</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+      </div>
+      <div class="start-zone">
+        <div class="total-time" id="tabata-total">Durée totale : 02:40</div>
+        <button class="btn-start" onclick="TabataTab.start()">DÉMARRER</button>
+      </div>
+    </div>
+
+    <!-- ROUNDS TAB -->
+    <div id="tab-rounds" class="tab-content">
+      <div class="tab-header">
+        <span class="tab-title">ROUNDS</span>
+        <div class="tab-actions">
+          <button class="btn-icon" onclick="RoundsTab.openPresets()">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button class="btn-save" onclick="RoundsTab.savePreset()">SAUV.</button>
+        </div>
+      </div>
+      <div class="config-list" id="rounds-config">
+        <div class="config-row" onclick="openTimePicker('rounds','prepare')">
+          <div class="config-dot yellow"></div>
+          <div class="config-info">
+            <span class="config-label">PRÉPARATION</span>
+            <span class="config-sub">Compte à rebours avant le départ</span>
+          </div>
+          <span class="config-value" id="rounds-prepare-val">:05</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openTimePicker('rounds','work')">
+          <div class="config-dot green"></div>
+          <div class="config-info">
+            <span class="config-label">TRAVAIL</span>
+            <span class="config-sub">Durée de l'effort</span>
+          </div>
+          <span class="config-value" id="rounds-work-val">:30</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openTimePicker('rounds','rest')">
+          <div class="config-dot red"></div>
+          <div class="config-info">
+            <span class="config-label">REPOS</span>
+            <span class="config-sub">Récupération</span>
+          </div>
+          <span class="config-value" id="rounds-rest-val">:15</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openNumberPicker('rounds','rounds')">
+          <div class="config-dot blue"></div>
+          <div class="config-info">
+            <span class="config-label">ROUNDS</span>
+            <span class="config-sub">1 round = travail + repos</span>
+          </div>
+          <span class="config-value" id="rounds-rounds-val">4</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openTimePicker('rounds','cooldown')">
+          <div class="config-dot blue"></div>
+          <div class="config-info">
+            <span class="config-label">RÉCUPÉRATION</span>
+            <span class="config-sub">Après le workout</span>
+          </div>
+          <span class="config-value" id="rounds-cooldown-val">:30</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+      </div>
+      <div class="start-zone">
+        <div class="total-time" id="rounds-total">Durée totale : 03:05</div>
+        <button class="btn-start" onclick="RoundsTab.start()">DÉMARRER</button>
+      </div>
+    </div>
+
+    <!-- STOPWATCH TAB -->
+    <div id="tab-stopwatch" class="tab-content">
+      <div class="tab-header">
+        <span class="tab-title">CHRONO</span>
+      </div>
+      <div class="stopwatch-display">
+        <svg class="ring-svg" viewBox="0 0 320 320">
+          <circle cx="160" cy="160" r="140" class="ring-bg"/>
+          <circle cx="160" cy="160" r="140" class="ring-fg ring-yellow" id="sw-ring" stroke-dasharray="879.6" stroke-dashoffset="0"/>
+        </svg>
+        <div class="ring-content">
+          <div class="sw-time" id="sw-display">00:00.0</div>
+        </div>
+      </div>
+      <div class="laps-list" id="laps-list"></div>
+      <div class="start-zone">
+        <div class="sw-controls">
+          <button class="btn-round btn-secondary" id="sw-lap-btn" onclick="StopwatchTab.lap()" disabled>TOUR</button>
+          <button class="btn-round btn-start-round" id="sw-start-btn" onclick="StopwatchTab.toggle()">DÉMARRER</button>
+          <button class="btn-round btn-secondary" id="sw-reset-btn" onclick="StopwatchTab.reset()" disabled>RESET</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIX TAB -->
+    <div id="tab-mix" class="tab-content">
+      <div class="tab-header">
+        <span class="tab-title">MIX</span>
+        <div class="tab-actions">
+          <button class="btn-icon" onclick="MixTab.openPresets()">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button class="btn-save" onclick="MixTab.savePreset()">SAUV.</button>
+        </div>
+      </div>
+
+      <div class="mix-meta">
+        <div class="config-row" onclick="openNumberPicker('mix','rounds')">
+          <div class="config-dot blue"></div>
+          <div class="config-info">
+            <span class="config-label">TOURS (répétitions)</span>
+          </div>
+          <span class="config-value" id="mix-rounds-val">1</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div class="config-row" onclick="openTimePicker('mix','restbr')">
+          <div class="config-dot red"></div>
+          <div class="config-info">
+            <span class="config-label">REPOS ENTRE TOURS</span>
+          </div>
+          <span class="config-value" id="mix-restbr-val">:00</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+      </div>
+
+      <div class="mix-blocks-list" id="mix-blocks-list">
+        <div class="mix-empty" id="mix-empty">
+          <div class="mix-empty-icon">⏱</div>
+          <p>Construis ta séance en ajoutant des blocs ci-dessous.</p>
+        </div>
+      </div>
+
+      <div class="mix-add-btns">
+        <button class="btn-add-block work" onclick="MixTab.addBlock('work')">+ Travail</button>
+        <button class="btn-add-block rest" onclick="MixTab.addBlock('rest')">+ Repos</button>
+      </div>
+      <div class="start-zone mix-start-zone">
+        <div class="total-time" id="mix-total">Durée totale : 00:00</div>
+        <button class="btn-start" onclick="MixTab.start()">DÉMARRER</button>
+      </div>
+    </div>
+
+    <!-- MES SÉANCES TAB -->
+    <div id="tab-seances" class="tab-content">
+      <div class="tab-header">
+        <span class="tab-title">MES SÉANCES</span>
+      </div>
+      <div class="seances-filter">
+        <button class="filter-btn active" onclick="SeancesTab.filter('all')" data-filter="all">Toutes</button>
+        <button class="filter-btn" onclick="SeancesTab.filter('tabata')" data-filter="tabata">Tabata</button>
+        <button class="filter-btn" onclick="SeancesTab.filter('rounds')" data-filter="rounds">Rounds</button>
+        <button class="filter-btn" onclick="SeancesTab.filter('mix')" data-filter="mix">Mix</button>
+      </div>
+      <div class="seances-list" id="seances-list">
+        <div class="seances-empty">Aucune séance sauvegardée.<br/>Crée ta première séance et clique sur <strong>SAUV.</strong></div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ======= BOTTOM NAV ======= -->
+  <nav id="bottom-nav">
+    <button class="nav-btn active" onclick="App.switchTab('tabata')" data-tab="tabata">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span>Tabata</span>
+    </button>
+    <button class="nav-btn" onclick="App.switchTab('rounds')" data-tab="rounds">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 8v4M12 16v.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span>Rounds</span>
+    </button>
+    <button class="nav-btn" onclick="App.switchTab('stopwatch')" data-tab="stopwatch">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8" stroke="currentColor" stroke-width="2"/><path d="M12 5V3M9 3h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span>Chrono</span>
+    </button>
+    <button class="nav-btn" onclick="App.switchTab('mix')" data-tab="mix">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span>Mix</span>
+    </button>
+    <button class="nav-btn" onclick="App.switchTab('seances')" data-tab="seances">
+      <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke="currentColor" stroke-width="2"/></svg>
+      <span>Séances</span>
+    </button>
+  </nav>
+
+  <!-- ======= TIMER RUNNING OVERLAY ======= -->
+  <div id="timer-overlay" class="hidden">
+    <div class="timer-phase-label" id="t-phase-label">PRÉPARATION</div>
+    <div class="timer-counter-label" id="t-counter-label">Round 1/8</div>
+    <div class="timer-circle-wrap">
+      <svg class="ring-svg" viewBox="0 0 320 320">
+        <circle cx="160" cy="160" r="140" class="ring-bg"/>
+        <circle cx="160" cy="160" r="140" class="ring-fg" id="t-ring" stroke-dasharray="879.6" stroke-dashoffset="0"/>
+      </svg>
+      <div class="ring-content">
+        <div class="timer-time" id="t-time">00:20</div>
+      </div>
+    </div>
+    <div class="timer-next" id="t-next">Prochain : REPOS :10</div>
+    <div class="timer-controls">
+      <button class="btn-round btn-secondary" onclick="TimerDisplay.stop()">ARRÊT</button>
+      <button class="btn-round btn-pause" id="t-pause-btn" onclick="TimerDisplay.togglePause()">PAUSE</button>
+    </div>
+    <div class="timer-workout-name" id="t-workout-name"></div>
+  </div>
+
+  <!-- ======= MODALS ======= -->
+
+  <!-- Time Picker Modal -->
+  <div id="modal-time" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal('modal-time')"></div>
+    <div class="modal-sheet">
+      <div class="modal-title" id="modal-time-title">Durée</div>
+      <div class="picker-wrap">
+        <div class="picker-col" id="picker-min">
+          <div class="picker-scroll" id="picker-min-scroll"></div>
+        </div>
+        <div class="picker-sep">:</div>
+        <div class="picker-col" id="picker-sec">
+          <div class="picker-scroll" id="picker-sec-scroll"></div>
+        </div>
+      </div>
+      <button class="modal-btn-confirm" onclick="confirmTimePicker()">VALIDER</button>
+    </div>
+  </div>
+
+  <!-- Number Picker Modal -->
+  <div id="modal-number" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal('modal-number')"></div>
+    <div class="modal-sheet">
+      <div class="modal-title" id="modal-number-title">Nombre</div>
+      <div class="picker-wrap">
+        <div class="picker-col" id="picker-num">
+          <div class="picker-scroll" id="picker-num-scroll"></div>
+        </div>
+      </div>
+      <button class="modal-btn-confirm" onclick="confirmNumberPicker()">VALIDER</button>
+    </div>
+  </div>
+
+  <!-- Save Preset Modal -->
+  <div id="modal-save" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal('modal-save')"></div>
+    <div class="modal-sheet">
+      <div class="modal-title">Sauvegarder la séance</div>
+      <input type="text" id="preset-name-input" class="modal-input" placeholder="Nom de la séance..." maxlength="40"/>
+      <button class="modal-btn-confirm" onclick="confirmSavePreset()">SAUVEGARDER</button>
+    </div>
+  </div>
+
+  <!-- Presets List Modal -->
+  <div id="modal-presets" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal('modal-presets')"></div>
+    <div class="modal-sheet modal-sheet-tall">
+      <div class="modal-title">Mes séances</div>
+      <div class="presets-list" id="modal-presets-list"></div>
+      <button class="modal-btn-cancel" onclick="closeModal('modal-presets')">FERMER</button>
+    </div>
+  </div>
+
+  <!-- Block Edit Modal (MIX) -->
+  <div id="modal-block" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal('modal-block')"></div>
+    <div class="modal-sheet">
+      <div class="modal-title" id="modal-block-title">Bloc</div>
+      <input type="text" id="block-name-input" class="modal-input" placeholder="Nom du bloc (ex: Facile, Sprint...)" maxlength="30"/>
+      <div class="picker-wrap" style="margin-top:16px">
+        <div class="picker-col" id="block-picker-min">
+          <div class="picker-scroll" id="block-picker-min-scroll"></div>
+        </div>
+        <div class="picker-sep">:</div>
+        <div class="picker-col" id="block-picker-sec">
+          <div class="picker-scroll" id="block-picker-sec-scroll"></div>
+        </div>
+      </div>
+      <button class="modal-btn-confirm" onclick="confirmBlockEdit()">VALIDER</button>
+    </div>
+  </div>
+
+  <!-- Workout End Modal -->
+  <div id="modal-end" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-sheet modal-end-sheet">
+      <div class="end-icon">🏆</div>
+      <div class="modal-title">Séance terminée !</div>
+      <div class="end-stats" id="end-stats"></div>
+      <button class="modal-btn-confirm" onclick="closeModal('modal-end')">FERMER</button>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<script src="app.js"></script>
+</body>
+</html>
