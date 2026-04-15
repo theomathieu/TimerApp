@@ -1,5 +1,5 @@
 /* TimerApp Service Worker */
-const CACHE = 'timerapp-v1';
+const CACHE = 'timerapp-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -27,7 +27,14 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // Network first, cache fallback — garantit les fichiers à jour
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    fetch(e.request)
+      .then(res => {
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });

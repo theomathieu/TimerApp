@@ -811,8 +811,6 @@ const MixTab = {
   _dragSrcIdx: null,
 
   init() {
-    // Garder une référence persistante à mix-empty AVANT tout rendu
-    this._emptyEl = document.getElementById('mix-empty');
     const saved = DB.getConfig('mix');
     if (saved) {
       this.blocks = saved.blocks || [];
@@ -827,17 +825,16 @@ const MixTab = {
 
     const list = document.getElementById('mix-blocks-list');
 
-    // Supprimer uniquement les lignes de blocs (pas mix-empty)
-    list.querySelectorAll('.mix-block-row').forEach(r => r.remove());
+    // Reconstruire entièrement — sans aucune dépendance à des références DOM
+    list.innerHTML = '';
 
     if (this.blocks.length === 0) {
-      // S'assurer que mix-empty est dans le DOM et visible
-      if (!this._emptyEl.parentNode) list.appendChild(this._emptyEl);
-      this._emptyEl.style.display = '';
+      list.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:40px 20px;color:#666;text-align:center;font-size:14px;line-height:1.5;">
+          <div style="font-size:48px">⏱</div>
+          <p>Construis ta séance en ajoutant des blocs ci-dessous.</p>
+        </div>`;
     } else {
-      // Cacher mix-empty et afficher les blocs
-      this._emptyEl.style.display = 'none';
-      if (this._emptyEl.parentNode) this._emptyEl.remove();
       this.blocks.forEach((block, idx) => {
         list.appendChild(this._createBlockRow(block, idx));
       });
