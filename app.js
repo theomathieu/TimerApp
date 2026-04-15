@@ -801,6 +801,118 @@ const StopwatchTab = {
 };
 
 /* ============================================================
+   MIX — DRAG & DROP (touch + mouse)
+   ============================================================ */
+function initMixDrag() {
+  const list = document.getElementById('mix-blocks-list');
+  if (!list) return;
+
+  let dragging = null;   // ligne originale (cachée)
+  let ghost    = null;   // copie flottante qui suit le doigt
+  let ph       = null;   // placeholder qui montre la destination
+  let offsetY  = 0;      // décalage doigt/coin supérieur du ghost
+  let srcIdx   = -1;
+
+  function getRows() {
+    return [...list.querySelectorAll('.mix-block-row')].filter(r => r !== dragging);
+  }
+
+  function movePlaceholder(clientY) {
+    const rows = getRows();
+    let insertBefore = null;
+    for (const r of rows) {
+      const rect = r.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) { insertBefore = r; break; }
+    }
+    insertBefore ? list.insertBefore(ph, insertBefore) : list.appendChild(ph);
+  }
+
+  function startDrag(handle, clientY) {
+    const row = handle.closest('.mix-block-row');
+    if (!row) return;
+    srcIdx = parseInt(row.dataset.idx);
+    const rect = row.getBoundingClientRect();
+    offsetY = clientY - rect.top;
+
+    // Créer le ghost flottant
+    ghost = row.cloneNode(true);
+    Object.assign(ghost.style, {
+      position: 'fixed', left: rect.left + 'px', top: rect.top + 'px',
+      width: rect.width + 'px', zIndex: '999', opacity: '0.92',
+      pointerEvents: 'none', boxShadow: '0 8px 28px rgba(0,0,0,0.55)',
+      borderRadius: '12px', margin: '0', transition: 'none'
+    });
+    document.body.appendChild(ghost);
+
+    // Placeholder
+    ph = document.createElement('div');
+    Object.assign(ph.style, {
+      height: rect.height + 'px', marginBottom: '8px',
+      borderRadius: '12px', background: 'rgba(155,127,232,0.12)',
+      border: '2px dashed rgba(155,127,232,0.45)', flexShrink: '0'
+    });
+    row.parentNode.insertBefore(ph, row);
+    row.style.opacity = '0';
+    dragging = row;
+  }
+
+  function moveDrag(clientY) {
+    if (!ghost) return;
+    ghost.style.top = (clientY - offsetY) + 'px';
+    movePlaceholder(clientY);
+  }
+
+  function endDrag() {
+    if (!ghost) return;
+
+    // Trouver l'index de destination (nombre de rows avant le placeholder)
+    const allItems = [...list.children];
+    const phPos = allItems.indexOf(ph);
+    let dstIdx = 0;
+    for (let i = 0; i < phPos; i++) {
+      if (allItems[i].classList.contains('mix-block-row') && allItems[i] !== dragging) dstIdx++;
+    }
+
+    ghost.remove(); ph.remove();
+    dragging.style.opacity = '';
+    ghost = null; ph = null; dragging = null;
+
+    if (dstIdx !== srcIdx) {
+      const [moved] = MixTab.blocks.splice(srcIdx, 1);
+      MixTab.blocks.splice(dstIdx, 0, moved);
+      MixTab.render();
+    }
+  }
+
+  // Attacher les handlers sur chaque poignée
+  list.querySelectorAll('.mix-block-drag').forEach(handle => {
+    // ---- TOUCH ----
+    handle.addEventListener('touchstart', e => {
+      e.preventDefault();
+      startDrag(handle, e.touches[0].clientY);
+    }, { passive: false });
+
+    handle.addEventListener('touchmove', e => {
+      e.preventDefault();
+      moveDrag(e.touches[0].clientY);
+    }, { passive: false });
+
+    handle.addEventListener('touchend', () => endDrag(), { passive: true });
+    handle.addEventListener('touchcancel', () => endDrag(), { passive: true });
+
+    // ---- MOUSE (desktop) ----
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault();
+      startDrag(handle, e.clientY);
+      const onMove = ev => moveDrag(ev.clientY);
+      const onUp   = () => { endDrag(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+/* ============================================================
    MIX TAB
    ============================================================ */
 const MixTab = {
@@ -847,78 +959,43 @@ const MixTab = {
 
     // Save config
     DB.saveConfig('mix', { blocks: this.blocks, ...this.meta });
+
+    // Init touch drag after DOM is ready
+    if (this.blocks.length > 0) requestAnimationFrame(() => initMixDrag());
   },
 
   _createBlockRow(block, idx) {
     const row = document.createElement('div');
     row.className = `mix-block-row ${block.type}`;
-    row.draggable = true;
     row.dataset.idx = idx;
 
     row.innerHTML = `
-      <span class="mix-block-drag">≡</span>
+      <span class="mix-block-drag" title="Glisser pour déplacer">≡</span>
       <div class="mix-block-info">
         <div class="mix-block-name">${block.name || (block.type === 'work' ? 'Travail' : 'Repos')}</div>
         <div class="mix-block-duration">${formatDuration(block.duration)}</div>
       </div>
       <div class="mix-block-actions">
-        <button class="mix-block-btn up-btn" title="Monter"></button>
-        <button class="mix-block-btn down-btn" title="Descendre"></button>
+        <button class="mix-block-btn dup-btn" title="Dupliquer"></button>
         <button class="mix-block-btn del-btn" title="Supprimer"></button>
       </div>
     `;
 
-    // Edit on info click
+    // Éditer en cliquant sur le contenu
     row.querySelector('.mix-block-info').addEventListener('click', () => this.editBlock(block.id));
 
-    // Up
-    row.querySelector('.up-btn').addEventListener('click', (e) => {
+    // Dupliquer — ajoute une copie en fin de liste
+    row.querySelector('.dup-btn').addEventListener('click', (e) => {
       e.stopPropagation();
-      if (idx > 0) {
-        [this.blocks[idx - 1], this.blocks[idx]] = [this.blocks[idx], this.blocks[idx - 1]];
-        this.render();
-      }
+      this.blocks.push({ ...block, id: genId() });
+      this.render();
     });
 
-    // Down
-    row.querySelector('.down-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (idx < this.blocks.length - 1) {
-        [this.blocks[idx], this.blocks[idx + 1]] = [this.blocks[idx + 1], this.blocks[idx]];
-        this.render();
-      }
-    });
-
-    // Delete
+    // Supprimer
     row.querySelector('.del-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       this.blocks.splice(idx, 1);
       this.render();
-    });
-
-    // Drag & drop
-    row.addEventListener('dragstart', (e) => {
-      this._dragSrcIdx = idx;
-      row.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    row.addEventListener('dragend', () => row.classList.remove('dragging'));
-    row.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      row.classList.add('drag-over');
-    });
-    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
-    row.addEventListener('drop', (e) => {
-      e.preventDefault();
-      row.classList.remove('drag-over');
-      const src = this._dragSrcIdx;
-      const dst = idx;
-      if (src !== null && src !== dst) {
-        const [moved] = this.blocks.splice(src, 1);
-        this.blocks.splice(dst, 0, moved);
-        this.render();
-      }
-      this._dragSrcIdx = null;
     });
 
     return row;

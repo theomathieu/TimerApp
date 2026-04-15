@@ -392,14 +392,6 @@ html, body {
 .mix-block-row.work { background: #2a1f4a; }
 .mix-block-row.rest { background: #1e1e1e; }
 
-.mix-block-drag {
-  color: var(--text3);
-  cursor: grab;
-  flex-shrink: 0;
-  font-size: 18px;
-  line-height: 1;
-  letter-spacing: 1px;
-}
 
 .mix-block-info {
   flex: 1;
@@ -427,15 +419,28 @@ html, body {
   border: none;
   color: var(--text3);
   cursor: pointer;
-  padding: 4px;
-  font-size: 16px;
+  padding: 6px;
+  font-size: 17px;
   border-radius: 6px;
+  line-height: 1;
 }
 .mix-block-btn:active { background: var(--bg4); }
-.mix-block-btn.up-btn::before { content: '↑'; }
-.mix-block-btn.down-btn::before { content: '↓'; }
+.mix-block-btn.dup-btn { color: var(--purple); }
+.mix-block-btn.dup-btn::before { content: '⊕'; }
 .mix-block-btn.del-btn { color: var(--red); }
 .mix-block-btn.del-btn::before { content: '✕'; }
+
+/* Poignée de drag : curseur grab, zone tactile agrandie */
+.mix-block-drag {
+  cursor: grab;
+  touch-action: none;
+  padding: 8px 6px;
+  font-size: 20px;
+  color: var(--text3);
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
 
 .mix-add-btns {
   display: flex;
