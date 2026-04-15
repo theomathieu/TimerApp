@@ -111,37 +111,36 @@ const AudioEngine = {
     return map[phase.type] || phase.name;
   },
 
-  /* ---- Sons + voix au démarrage d'une phase ---- */
+  /* ---- Sons + voix au démarrage d'une phase (tout async) ---- */
   announcePhase(phase) {
     const text = this._phaseText(phase);
+    // Micro-délai initial pour garantir que le timer a déjà démarré
+    setTimeout(() => {
+      if (phase.type === 'prepare') {
+        this._beep(660, 0.18, 0.35);
+        setTimeout(() => this.speak(text), 200);
 
-    if (phase.type === 'prepare') {
-      this._beep(660, 0.18, 0.35);
-      setTimeout(() => this.speak(text), 150);
+      } else if (phase.type === 'work') {
+        this._beep(523, 0.10, 0.4, 'square');
+        setTimeout(() => this._beep(659, 0.10, 0.45, 'square'), 120);
+        setTimeout(() => this._beep(880, 0.20, 0.55, 'square'), 240);
+        setTimeout(() => this.speak(text), 400);
 
-    } else if (phase.type === 'work') {
-      // 3 bips montants énergiques (tous async pour ne pas bloquer)
-      setTimeout(() => this._beep(523, 0.10, 0.4, 'square'), 0);
-      setTimeout(() => this._beep(659, 0.10, 0.45, 'square'), 120);
-      setTimeout(() => this._beep(880, 0.20, 0.55, 'square'), 240);
-      setTimeout(() => this.speak(text), 400);
+      } else if (phase.type === 'rest') {
+        this._beep(660, 0.18, 0.35, 'sine');
+        setTimeout(() => this._beep(440, 0.25, 0.28, 'sine'), 200);
+        setTimeout(() => this.speak(text), 200);
 
-    } else if (phase.type === 'rest') {
-      // 2 bips descendants doux
-      setTimeout(() => this._beep(660, 0.18, 0.35, 'sine'), 0);
-      setTimeout(() => this._beep(440, 0.25, 0.28, 'sine'), 220);
-      setTimeout(() => this.speak(text), 200);
+      } else if (phase.type === 'cooldown') {
+        this._beep(440, 0.3, 0.3, 'sine');
+        setTimeout(() => this.speak(text), 200);
 
-    } else if (phase.type === 'cooldown') {
-      setTimeout(() => this._beep(440, 0.3, 0.3, 'sine'), 0);
-      setTimeout(() => this.speak(text), 200);
-
-    } else {
-      // Phase MIX custom sans type standard
-      setTimeout(() => this._beep(600, 0.12, 0.35), 0);
-      setTimeout(() => this._beep(800, 0.18, 0.45), 140);
-      setTimeout(() => this.speak(text), 320);
-    }
+      } else {
+        this._beep(600, 0.12, 0.35);
+        setTimeout(() => this._beep(800, 0.18, 0.45), 140);
+        setTimeout(() => this.speak(text), 320);
+      }
+    }, 50);
   },
 
   /* ---- Décompte 3-2-1 (géré directement dans TimerEngine._tick) ---- */
@@ -290,7 +289,7 @@ function totalSeconds(phases) {
 }
 
 /* ============================================================
-   TIMER ENGINE  — setInterval fixe, Date.now() absolu
+   TIMER ENGINE  — un seul setInterval pour toute la séance
    ============================================================ */
 class TimerEngine {
   constructor(phases, callbacks) {
@@ -298,40 +297,47 @@ class TimerEngine {
     this.cb       = callbacks;
     this.idx      = 0;
     this.state    = 'idle';
-    this._iv      = null;   // handle setInterval
-    this._t0      = 0;      // Date.now() au démarrage de la phase courante
-    this._saved   = 0;      // ms accumulées avant pause
-    this._lastSec = -1;     // dernière seconde affichée (pour décompte)
+    this._iv      = null;
+    this._t0      = 0;      // Date.now() référence de la phase courante
+    this._offset  = 0;      // ms écoulées avant la référence (pause)
+    this._prevSec = -1;
   }
 
   get currentPhase() { return this.phases[this.idx]; }
   get nextPhase()    { return this.phases[this.idx + 1] || null; }
 
-  /* Temps écoulé dans la phase courante */
-  _elapsed() { return this._saved + (Date.now() - this._t0); }
+  _elapsed()  { return this._offset + (Date.now() - this._t0); }
+
+  _resetPhase() {
+    this._t0      = Date.now();
+    this._offset  = 0;
+    this._prevSec = -1;
+  }
 
   start() {
     AudioEngine._init();
-    this._t0    = Date.now();
-    this._saved = 0;
-    this._lastSec = -1;
-    this.state  = 'running';
-    this.cb.onPhaseStart && this.cb.onPhaseStart(this.currentPhase, this.nextPhase);
-    this._startInterval();
+    this.idx = 0;
+    this._resetPhase();
+    this.state = 'running';
+    // Notification de début de phase — async pour ne jamais bloquer le timer
+    const ph = this.currentPhase, nx = this.nextPhase;
+    setTimeout(() => this.cb.onPhaseStart && this.cb.onPhaseStart(ph, nx), 0);
+    // Un seul interval pour toute la séance — ne se relance jamais
+    this._iv = setInterval(() => this._tick(), 300);
   }
 
   pause() {
     if (this.state !== 'running') return;
-    this.state  = 'paused';
-    this._saved = this._elapsed();
-    clearInterval(this._iv);
+    this.state   = 'paused';
+    this._offset = this._elapsed(); // capture le temps écoulé
+    // L'interval continue mais _tick() retourne immédiatement
   }
 
   resume() {
     if (this.state !== 'paused') return;
     this.state = 'running';
-    this._t0   = Date.now();
-    this._startInterval();
+    this._t0   = Date.now(); // nouveau point de référence
+    // _offset contient déjà le temps avant la pause
   }
 
   stop() {
@@ -339,52 +345,50 @@ class TimerEngine {
     clearInterval(this._iv);
   }
 
-  _startInterval() {
-    clearInterval(this._iv);
-    this._iv = setInterval(() => this._tick(), 250); // 4 fois/sec — fiable iOS
-  }
-
   _tick() {
-    if (this.state !== 'running') return;
+    if (this.state !== 'running') return; // pause ou stop : ne rien faire
 
+    const phase     = this.currentPhase;
     const elapsed   = this._elapsed();
-    const durMs     = this.currentPhase.duration * 1000;
+    const durMs     = phase.duration * 1000;
     const remaining = Math.max(0, durMs - elapsed);
     const remSec    = Math.ceil(remaining / 1000);
-    const progress  = remaining > 0 ? 1 - remaining / durMs : 1;
+    const progress  = Math.min(1, elapsed / durMs);
 
     this.cb.onTick && this.cb.onTick(remSec, progress);
 
-    // Décompte 3-2-1 : une seule fois par seconde
-    if (remSec !== this._lastSec && remSec > 0 && remSec <= 3) {
-      this._lastSec = remSec;
-      AudioEngine._beep(remSec === 1 ? 1200 : 900, 0.12, 0.35, 'sine');
-      setTimeout(() => AudioEngine.speak(String(remSec)), 0);
+    // Décompte 3-2-1 (une fois par seconde, complètement async)
+    if (remSec > 0 && remSec <= 3 && remSec !== this._prevSec) {
+      this._prevSec = remSec;
+      const n = remSec;
+      setTimeout(() => {
+        AudioEngine._beep(n === 1 ? 1200 : 900, 0.12, 0.35, 'sine');
+        setTimeout(() => AudioEngine.speak(String(n)), 60);
+      }, 0);
     }
 
     if (remaining <= 0) {
-      clearInterval(this._iv);
       this._advance();
     }
   }
 
   _advance() {
-    AudioEngine.phaseEnd();
+    // Passer à la phase suivante — l'interval continue de tourner
+    setTimeout(() => AudioEngine.phaseEnd(), 0);
     this.idx++;
 
     if (this.idx >= this.phases.length) {
       this.state = 'finished';
-      setTimeout(() => AudioEngine.workoutEnd(), 300);
+      clearInterval(this._iv);
+      setTimeout(() => AudioEngine.workoutEnd(), 400);
       this.cb.onFinish && this.cb.onFinish();
       return;
     }
 
-    // Nouvelle phase : réinitialiser le chrono et relancer immédiatement
-    this._t0      = Date.now();
-    this._saved   = 0;
-    this._lastSec = -1;
-    this.cb.onPhaseStart && this.cb.onPhaseStart(this.currentPhase, this.nextPhase);
-    this._startInterval();
+    this._resetPhase();
+    const ph = this.currentPhase, nx = this.nextPhase;
+    setTimeout(() => this.cb.onPhaseStart && this.cb.onPhaseStart(ph, nx), 0);
+    // Pas besoin de relancer l'interval — il tourne déjà
   }
 }
 
